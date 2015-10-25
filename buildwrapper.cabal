@@ -11,7 +11,7 @@ description:    Buildwrapper is an alternative to scion.
   Buildwrapper is used in the EclipseFP project (Eclipse plugins for Haskell development)
 category:       Development
 stability:      beta
-maintainer:     JP Moresmau <jpmoresmau@gmail.com>
+maintainer:     Artem Chirkin <chirkin@arch.ethz.ch>
 author:         JP Moresmau <jpmoresmau@gmail.com>, based on the work of Thomas Schilling and others
 homepage:       https://github.com/JPMoresmau/BuildWrapper
 extra-source-files: README.md
