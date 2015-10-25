@@ -1,6 +1,6 @@
 # BuildWrapper
 
-[![Build Status](https://travis-ci.org/JPMoresmau/BuildWrapper.svg?branch=master)](https://travis-ci.org/JPMoresmau/BuildWrapper)
+[![Build Status](https://travis-ci.org/achirkin/BuildWrapper.svg?branch=master)](https://travis-ci.org/achirkin/BuildWrapper)
 
 BuildWrapper is currently NOT maintained anymore. Feel free to fork and take up maintainership!
 
