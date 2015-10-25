@@ -1,4 +1,4 @@
-{-# LANGUAGE CPP, OverloadedStrings, TypeSynonymInstances,StandaloneDeriving,DeriveDataTypeable,ScopedTypeVariables, MultiParamTypeClasses, PatternGuards, NamedFieldPuns, TupleSections, KindSignatures  #-}
+{-# LANGUAGE CPP, FlexibleContexts, OverloadedStrings, TypeSynonymInstances,StandaloneDeriving,DeriveDataTypeable,ScopedTypeVariables, MultiParamTypeClasses, PatternGuards, NamedFieldPuns, TupleSections, KindSignatures  #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 -- |
 -- Module      : Language.Haskell.BuildWrapper.GHC
@@ -301,7 +301,7 @@ ghcWithASTNotes  f ff base_dir contents shouldAddTargets= do
                 | (Just status)<-bwSeverity df s=do
                         let n=BWNote { bwnLocation = ghcSpanToBWLocation base_dir loc
                                  , bwnStatus = status
-                                 , bwnTitle = removeBaseDir base_dir $ removeStatus status $ showSDUser (qualName style,qualModule style) df msg
+                                 , bwnTitle = removeBaseDir base_dir $ removeStatus status $ showSDUser (getPrintUfromPprStyle style) df msg
                                  }
                         modifyIORef ref $  \ ns -> ns ++ [n]
                 | otherwise=return ()
@@ -312,12 +312,24 @@ ghcWithASTNotes  f ff base_dir contents shouldAddTargets= do
             bwSeverity _  SevFatal   = Just BWError
             bwSeverity _ _           = Nothing
 
+getPrintUfromPprStyle :: PprStyle -> PrintUnqualified
+#if __GLASGOW_HASKELL__ >= 710
+getPrintUfromPprStyle style = QueryQualify
+    { queryQualifyName = qualName style
+    , queryQualifyModule = qualModule style
+    , queryQualifyPackage = qualPackage style
+    }
+#else
+getPrintUfromPprStyle = qualName &&& qualModule
+#endif
+
+
 -- | do we have -Werror
 isWarnIsError :: DynFlags -> Bool
 #if __GLASGOW_HASKELL__ >= 707
-isWarnIsError df = gopt Opt_WarnIsError df
+isWarnIsError = gopt Opt_WarnIsError
 #else
-isWarnIsError df = dopt Opt_WarnIsError df
+isWarnIsError = dopt Opt_WarnIsError
 #endif
 
 -- | Convert 'GHC.Messages' to '[BWNote]'.
@@ -514,7 +526,7 @@ getEvalResults expr=handleSourceError (\e->return [EvalResult Nothing Nothing (J
                               case rr of
                                       RunOk ns->do
 
-                                              let q=(qualName &&& qualModule) defaultUserStyle
+                                              let q=getPrintUfromPprStyle defaultUserStyle
                                               mapM (\n->do
                                                       mty<-lookupName n
                                                       case mty of
@@ -554,7 +566,7 @@ getEvalResults expr=handleSourceError (\e->return [EvalResult Nothing Nothing (J
              txt_ <- withExtendedLinkEnv [(bname, val)]
                                          (GHC.compileExpr exprS)
              let myprec = 10 -- application precedence. TODO Infix constructors
-             let txt = unsafeCoerce txt_
+             let txt = unsafeCoerce txt_ :: String
              return $ if not (null txt)
                 then Just $ cparen (prec >= myprec && needsParens txt)
                                       (text txt)
@@ -572,8 +584,8 @@ getEvalResults expr=handleSourceError (\e->return [EvalResult Nothing Nothing (J
 
     bindToFreshName hsc_env ty userName = do
       name <- newGrimName userName
-      let mkid       = AnId $ mkVanillaGlobal name ty
-          new_ic   = extendInteractiveContext (hsc_IC hsc_env) [mkid]
+      let mkid       = mkVanillaGlobal name ty
+          new_ic   = extendInteractiveContext (hsc_IC hsc_env) [mkid] [] [] [] Nothing []
       return (hsc_env {hsc_IC = new_ic }, name)
 
     --    Create new uniques and give them sequentially numbered names
@@ -709,6 +721,10 @@ ghcSpanToBWLocation baseDir sp
 #else
                 sfile (RealSrcSpan ss)= GHC.srcSpanFile ss
 #endif
+#if __GLASGOW_HASKELL__ > 710
+                sfile (UnhelpfulSpan ss)= GHC.srcSpanFile ss
+#else
+#endif
 
 -- | convert a column info from GHC to our system (1 based)
 ghcColToScionCol :: Int -> Int
@@ -799,7 +815,7 @@ lexTokenStreamH buf loc dflags = unP go initState
 #endif
           initState = mkPState dflags' buf loc
           go = do
-            ltok <- lexer return
+            ltok <- lexer False return
             case ltok of
               L _ ITeof -> return []
               _ -> liftM (ltok:) go
@@ -1134,21 +1150,20 @@ tokenType  (ITinline_prag {})="P"          -- True <=> INLINE, False <=> NOINLIN
 #if __GLASGOW_HASKELL__ >= 612 && __GLASGOW_HASKELL__ < 700
 tokenType  (ITinline_conlike_prag {})="P"  -- same
 #endif
-tokenType  ITspec_prag="P"                 -- SPECIALISE
-tokenType  (ITspec_inline_prag {})="P"     -- SPECIALISE INLINE (or NOINLINE)
-tokenType  ITsource_prag="P"
-tokenType  ITrules_prag="P"
-tokenType  ITwarning_prag="P"
-tokenType  ITdeprecated_prag="P"
-tokenType  ITline_prag="P"
-tokenType  ITscc_prag="P"
-tokenType  ITgenerated_prag="P"
-tokenType  ITcore_prag="P"                 -- hdaume: core annotations
-tokenType  ITunpack_prag="P"
+tokenType  ITspec_prag{} ="P"                 -- SPECIALISE
+tokenType  ITspec_inline_prag{} ="P"     -- SPECIALISE INLINE (or NOINLINE)
+tokenType  ITrules_prag{} ="P"
+tokenType  ITwarning_prag{} ="P"
+tokenType  ITdeprecated_prag{} ="P"
+tokenType  ITscc_prag{} ="P"
+tokenType  ITgenerated_prag{} ="P"
+tokenType  ITline_prag{} ="P"
+tokenType  ITcore_prag{} ="P"                 -- hdaume: core annotations
+tokenType  ITunpack_prag{} ="P"
 #if __GLASGOW_HASKELL__ >= 612
-tokenType  ITann_prag="P"
+tokenType  ITann_prag{} ="P"
 #endif
-tokenType  ITclose_prag="P"
+tokenType  ITclose_prag{} ="P"
 tokenType  (IToptions_prag {})="P"
 tokenType  (ITinclude_prag {})="P"
 tokenType  ITlanguage_prag="P"
@@ -1270,14 +1285,14 @@ tokenType  (ITnovect_prag {})="P"
   -- 7.4 new token types
 #if __GLASGOW_HASKELL__ >= 704
 tokenType ITcapiconv= "EK"
-tokenType ITnounpack_prag= "P"
+tokenType ITnounpack_prag{} = "P"
 tokenType ITtildehsh= "S"
 tokenType ITsimpleQuote="SS"
 #endif
 
 -- 7.6 new token types
 #if __GLASGOW_HASKELL__ >= 706
-tokenType ITctype= "P"
+tokenType ITctype{} = "P"
 tokenType ITlcase= "S"
 tokenType (ITqQuasiQuote {}) = "TH" -- [Qual.quoter| quote |]
 #endif
@@ -1287,11 +1302,21 @@ tokenType (ITqQuasiQuote {}) = "TH" -- [Qual.quoter| quote |]
 tokenType ITjavascriptcallconv = "EK" --  javascript
 tokenType ITrole               = "EK" --  role
 tokenType ITpattern            = "EK" --  pattern
-tokenType ITminimal_prag       = "EK" --  minimal
+tokenType ITminimal_prag{}     = "EK" --  minimal
 tokenType ITopenTExpQuote      = "TH" --  [||
 tokenType ITcloseTExpQuote     = "TH" --  ||]
 tokenType (ITidTyEscape {})    = "TH" --  $$x
 tokenType ITparenTyEscape      = "TH" --  $$(
+#endif
+
+-- seems like 7.10 new token types
+#if __GLASGOW_HASKELL__ >= 710
+tokenType ITstatic {}            = "EK" -- static
+tokenType ITsource_prag {}       = "P"
+tokenType IToverlappable_prag {} = "P"
+tokenType IToverlapping_prag {}  = "P"
+tokenType IToverlaps_prag {}     = "P"
+tokenType ITincoherent_prag {}   = "P"
 #endif
 
 -- | a dot as a FastString
@@ -1352,11 +1377,12 @@ ghcImportToUsage myPkg (L _ imp) (ls,moduMap)=(do
         let tmod=T.pack $ showSD True df $ ppr modu
 #if __GLASGOW_HASKELL__ >= 710
             tpkg=T.pack $ showSD True df $ ppr $ modulePackageKey pkg
+            subs=concatMap (ghcLIEToUsage df (Just nomain) tmod "import") . maybe [] (unlocate . snd) $ ideclHiding imp
 #else
             tpkg=T.pack $ showSD True df $ ppr $ modulePackageId pkg
+            subs=concatMap (ghcLIEToUsage df (Just nomain) tmod "import") $ maybe [] snd $ ideclHiding imp
 #endif
             nomain=if tpkg=="main" then myPkg else tpkg
-            subs=concatMap (ghcLIEToUsage df (Just nomain) tmod "import") $ maybe [] snd $ ideclHiding imp
             moduMap2=maybe moduMap (\alias->let
                 mlmods=DM.lookup alias moduMap
                 newlmods=case mlmods of
@@ -1369,6 +1395,9 @@ ghcImportToUsage myPkg (L _ imp) (ls,moduMap)=(do
         `gcatch` (\(se :: SourceError) -> do
                 GMU.liftIO $ print se
                 return ([],moduMap))
+
+unlocate :: Located a -> a
+unlocate (L _ a) = a
 
 -- | get usages from GHC IE
 ghcLIEToUsage :: DynFlags -> Maybe T.Text -> T.Text -> T.Text -> LIE Name -> [Usage]
@@ -1384,7 +1413,11 @@ ghcLIEToUsage _ _ _ _ _=[]
 ghcExportToUsage :: DynFlags -> T.Text -> T.Text ->AliasMap -> LIE Name -> Ghc [Usage]
 ghcExportToUsage df myPkg myMod moduMap lie@(L _ name)=(do
         ls<-case name of
+#if __GLASGOW_HASKELL__ >= 710
+                (IEModuleContents (L _ modu))-> do
+#else
                 (IEModuleContents modu)-> do
+#endif
                         let realModus=fromMaybe [modu] (DM.lookup modu moduMap)
                         mapM (\modu2->do
                                 pkg<-lookupModule modu2 Nothing
@@ -1404,7 +1437,7 @@ ghcExportToUsage df myPkg myMod moduMap lie@(L _ name)=(do
                 return [])
 
 -- | generate a usage for a name
-ghcNameToUsage ::  DynFlags -> Maybe T.Text -> T.Text -> T.Text -> Name -> SrcSpan -> Bool -> Usage
+ghcNameToUsage ::  DynFlags -> Maybe T.Text -> T.Text -> T.Text -> Located Name -> SrcSpan -> Bool -> Usage
 ghcNameToUsage df tpkg tmod tsection nm src typ=Usage tpkg tmod (T.pack $ showSD False df $ ppr nm) tsection typ (toJSON $ ghcSpanToLocation src) False
 
 -- | map of imports
@@ -1422,7 +1455,7 @@ ghcImportMap l@(L _ imp)=(do
         df <- getSessionDynFlags
         let maybeHiding=ideclHiding imp
         let hidden=case maybeHiding of
-                Just(True,ns)->map (T.pack . showSD False df . ppr . unLoc) ns
+                Just(True,ns)->map (T.pack . showSD False df . ppr . unLoc) $ unlocate ns
                 _ ->[]
         let fullM =case mmi of
                 Nothing -> mm
